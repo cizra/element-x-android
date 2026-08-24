@@ -35,6 +35,13 @@ interface MatrixMediaLoader {
      * @param useCache: if true, the rust sdk will cache the media in its store.
      * @return a [Result] of [MediaFile]
      */
+    suspend fun startStreamingMediaFile(
+        source: MediaSource,
+        mimeType: String?,
+        filename: String?,
+        progressCallback: ProgressCallback? = null,
+    ): Result<StreamingMediaFile>
+
     suspend fun downloadMediaFile(
         source: MediaSource,
         mimeType: String?,

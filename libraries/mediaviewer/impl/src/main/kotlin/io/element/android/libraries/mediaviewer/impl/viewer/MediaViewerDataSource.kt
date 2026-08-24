@@ -20,11 +20,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import io.element.android.features.contentscanner.api.ContentScannerService
 import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.core.extensions.mapCatchingExceptions
+import io.element.android.libraries.core.mimetype.MimeTypes.isMimeTypeVideo
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.ProgressCallback
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaFile
 import io.element.android.libraries.matrix.api.media.MediaSource
+import io.element.android.libraries.matrix.api.media.StreamingMediaFile
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationState
 import io.element.android.libraries.matrix.ui.media.contentvalidation.DefaultContentValidationState
@@ -79,6 +81,7 @@ class MediaViewerDataSource(
     private val localMediaStates: MutableMap<String, MutableState<AsyncData<LocalMedia>>> =
         mutableMapOf()
     private val downloadProgressStates: MutableMap<String, MutableStateFlow<Int?>> = mutableMapOf()
+    private val streamingVideoStates: MutableMap<String, MutableState<StreamingMediaFile?>> = mutableMapOf()
 
     private val mediaValidationState: MutableMap<String, ContentValidationState> =
         mutableMapOf()
@@ -93,6 +96,7 @@ class MediaViewerDataSource(
         mediaFiles.clear()
         downloadProgressStates.values.forEach { it.value = null }
         downloadProgressStates.clear()
+        streamingVideoStates.clear()
         localMediaStates.clear()
     }
 
@@ -179,6 +183,9 @@ class MediaViewerDataSource(
                     val downloadProgress = downloadProgressStates.getOrPut(sourceUrl) {
                         MutableStateFlow(null)
                     }
+                    val streamingVideo = streamingVideoStates.getOrPut(sourceUrl) {
+                        mutableStateOf(null)
+                    }
                     val validationState = mediaValidationState.getOrPut(sourceUrl) {
                         mediaItem.eventId()?.let { contentValidationCache[it] } ?: DefaultContentValidationState()
                     }
@@ -190,6 +197,7 @@ class MediaViewerDataSource(
                             thumbnailSource = mediaItem.thumbnailSource(),
                             downloadedMedia = localMedia,
                             downloadProgress = downloadProgress,
+                            streamingVideo = streamingVideo,
                             pagerKey = pagerKeysHandler.getKey(mediaItem),
                             validationState = validationState,
                         )
@@ -231,23 +239,54 @@ class MediaViewerDataSource(
         val downloadProgress = downloadProgressStates.getOrPut(data.mediaSource.safeUrl) {
             MutableStateFlow(null)
         }
+        val streamingVideo = streamingVideoStates.getOrPut(data.mediaSource.safeUrl) {
+            mutableStateOf(null)
+        }
         downloadProgress.value = null
+        streamingVideo.value = null
         localMediaState.value = AsyncData.Loading()
+        val progressCallback = object : ProgressCallback {
+            override fun onProgress(current: Long, total: Long) {
+                downloadProgress.value = if (total > 0) {
+                    ((current.coerceIn(0, total) * 100.0) / total).toInt().coerceIn(0, 100)
+                } else {
+                    null
+                }
+            }
+        }
         try {
-            mediaLoader
+            if (data.mediaInfo.mimeType.isMimeTypeVideo() &&
+                !data.mediaSource.isEncrypted &&
+                data.validationState.getCurrentOverallState().isValid()
+            ) {
+                val file = mediaLoader.startStreamingMediaFile(
+                    source = data.mediaSource,
+                    mimeType = data.mediaInfo.mimeType,
+                    filename = data.mediaInfo.filename,
+                    progressCallback = progressCallback,
+                ).getOrElse {
+                    localMediaState.value = AsyncData.Failure(it)
+                    return
+                }
+                mediaFiles[data.mediaSource] = file
+                streamingVideo.value = file
+                file.awaitCompletion().getOrElse {
+                    localMediaState.value = AsyncData.Failure(it)
+                    return
+                }
+                localMediaState.value = runCatching {
+                    localMediaFactory.createFromMediaFile(file, data.mediaInfo)
+                }.fold(
+                    onSuccess = { AsyncData.Success(it) },
+                    onFailure = { AsyncData.Failure(it) },
+                )
+            } else {
+                mediaLoader
                 .downloadMediaFile(
                     source = data.mediaSource,
                     mimeType = data.mediaInfo.mimeType,
                     filename = data.mediaInfo.filename,
-                    progressCallback = object : ProgressCallback {
-                        override fun onProgress(current: Long, total: Long) {
-                            downloadProgress.value = if (total > 0) {
-                                ((current.coerceIn(0, total) * 100.0) / total).toInt().coerceIn(0, 100)
-                            } else {
-                                null
-                            }
-                        }
-                    }
+                    progressCallback = progressCallback,
                 )
                 .onSuccess { mediaFile ->
                     mediaFiles[data.mediaSource] = mediaFile
@@ -264,6 +303,7 @@ class MediaViewerDataSource(
                 .onFailure {
                     localMediaState.value = AsyncData.Failure(it)
                 }
+            }
         } finally {
             downloadProgress.value = null
         }
@@ -284,6 +324,7 @@ class MediaViewerDataSource(
         if (localMediaStates[data.mediaSource.safeUrl]?.value?.isLoading() == true) {
             Timber.d("cancelLoadingMedia for ${data.eventId}")
             mediaFiles.remove(data.mediaSource)?.close()
+            streamingVideoStates[data.mediaSource.safeUrl]?.value = null
             downloadProgressStates[data.mediaSource.safeUrl]?.value = null
             localMediaStates[data.mediaSource.safeUrl]?.value = AsyncData.Uninitialized
         }

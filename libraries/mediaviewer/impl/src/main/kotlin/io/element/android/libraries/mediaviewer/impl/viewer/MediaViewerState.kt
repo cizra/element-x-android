@@ -14,6 +14,7 @@ import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.media.MediaSource
+import io.element.android.libraries.matrix.api.media.StreamingMediaFile
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationState
 import io.element.android.libraries.mediaviewer.api.MediaInfo
@@ -54,6 +55,7 @@ sealed interface MediaViewerPageData {
         val thumbnailSource: MediaSource?,
         val downloadedMedia: State<AsyncData<LocalMedia>>,
         val downloadProgress: StateFlow<Int?>,
+        val streamingVideo: State<StreamingMediaFile?>,
         val validationState: ContentValidationState,
         override val pagerKey: Long,
     ) : MediaViewerPageData

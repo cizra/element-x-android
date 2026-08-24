@@ -12,6 +12,7 @@ import io.element.android.libraries.matrix.api.core.ProgressCallback
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaFile
 import io.element.android.libraries.matrix.api.media.MediaSource
+import io.element.android.libraries.matrix.api.media.StreamingMediaFile
 import io.element.android.tests.testutils.simulateLongTask
 
 class FakeMatrixMediaLoader : MatrixMediaLoader {
@@ -34,6 +35,13 @@ class FakeMatrixMediaLoader : MatrixMediaLoader {
             Result.success(ByteArray(0))
         }
     }
+
+    override suspend fun startStreamingMediaFile(
+        source: MediaSource,
+        mimeType: String?,
+        filename: String?,
+        progressCallback: ProgressCallback?,
+    ): Result<StreamingMediaFile> = Result.failure(UnsupportedOperationException())
 
     override suspend fun downloadMediaFile(
         source: MediaSource,

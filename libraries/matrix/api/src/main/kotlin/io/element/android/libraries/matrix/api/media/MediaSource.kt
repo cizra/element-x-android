@@ -26,6 +26,10 @@ data class MediaSource(
     /**
      * A URL with invalid parts (like `#fragment`, if it's an MXC url) removed.
      */
+    // ponytail: inspect stable Matrix encrypted-file fields; parse JSON if source formats expand.
+    @IgnoredOnParcel
+    val isEncrypted = json?.contains("\"key\"") == true && json.contains("\"hashes\"")
+
     @IgnoredOnParcel
     val safeUrl = if (url.startsWith("mxc")) {
         // We've seen some MXC urls in the wild having some `mxc://foo/bar#auto` fragment suffix, which is invalid

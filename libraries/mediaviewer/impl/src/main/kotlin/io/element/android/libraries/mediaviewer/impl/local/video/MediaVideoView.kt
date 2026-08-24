@@ -42,6 +42,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import io.element.android.compound.theme.ElementTheme
@@ -52,6 +53,7 @@ import io.element.android.libraries.designsystem.text.toDp
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.designsystem.utils.KeepScreenOn
 import io.element.android.libraries.designsystem.utils.OnLifecycleEvent
+import io.element.android.libraries.matrix.api.media.StreamingMediaFile
 import io.element.android.libraries.mediaviewer.api.local.LocalMedia
 import io.element.android.libraries.mediaviewer.impl.local.LocalMediaViewState
 import io.element.android.libraries.mediaviewer.impl.local.PlayableState
@@ -75,6 +77,7 @@ fun MediaVideoView(
     localMediaViewState: LocalMediaViewState,
     bottomPaddingInPixels: Int,
     localMedia: LocalMedia?,
+    streamingMedia: StreamingMediaFile? = null,
     autoplay: Boolean,
     audioFocus: AudioFocus?,
     forPreview: Boolean,
@@ -87,6 +90,7 @@ fun MediaVideoView(
         bottomPaddingInPixels = bottomPaddingInPixels,
         exoPlayer = exoPlayer,
         localMedia = localMedia,
+        streamingMedia = streamingMedia,
         autoplay = autoplay,
         audioFocus = audioFocus,
         forPreview = forPreview,
@@ -102,6 +106,7 @@ private fun ExoPlayerMediaVideoView(
     bottomPaddingInPixels: Int,
     exoPlayer: ExoPlayer,
     localMedia: LocalMedia?,
+    streamingMedia: StreamingMediaFile?,
     autoplay: Boolean,
     audioFocus: AudioFocus?,
     forPreview: Boolean,
@@ -201,13 +206,22 @@ private fun ExoPlayerMediaVideoView(
         }
     }
 
-    if (localMedia?.uri != null) {
-        LaunchedEffect(localMedia.uri) {
-            val mediaItem = MediaItem.fromUri(localMedia.uri)
-            exoPlayer.setMediaItem(mediaItem)
+    LaunchedEffect(streamingMedia ?: localMedia?.uri) {
+        when {
+            streamingMedia != null -> {
+                val item = MediaItem.fromUri(streamingMedia.file.toURI().toString())
+                val source = ProgressiveMediaSource.Factory(GrowingFileDataSource.Factory(streamingMedia))
+                    .createMediaSource(item)
+                exoPlayer.setMediaSource(source)
+            }
+            localMedia?.uri != null -> exoPlayer.setMediaItem(MediaItem.fromUri(localMedia.uri))
+            else -> exoPlayer.setMediaItems(emptyList())
         }
-    } else {
-        exoPlayer.setMediaItems(emptyList())
+    }
+    LaunchedEffect(streamingMedia?.isComplete) {
+        mediaPlayerControllerState = mediaPlayerControllerState.copy(
+            canSeek = streamingMedia?.isComplete != false,
+        )
     }
     KeepScreenOn(mediaPlayerControllerState.isPlaying)
     Box(
@@ -254,7 +268,7 @@ private fun ExoPlayerMediaVideoView(
                 },
             )
         }
-        if (localMedia != null) {
+        if (localMedia != null || streamingMedia != null) {
             MediaPlayerControllerView(
                 state = mediaPlayerControllerState,
                 onTogglePlay = {
@@ -262,11 +276,13 @@ private fun ExoPlayerMediaVideoView(
                     exoPlayer.togglePlay()
                 },
                 onSeekChange = {
-                    autoHideController++
-                    mediaPlayerControllerState = mediaPlayerControllerState.copy(
-                        seekingToMillis = it.toLong(),
-                    )
-                    exoPlayer.seekToEnsurePlaying(it.toLong())
+                    if (mediaPlayerControllerState.canSeek) {
+                        autoHideController++
+                        mediaPlayerControllerState = mediaPlayerControllerState.copy(
+                            seekingToMillis = it.toLong(),
+                        )
+                        exoPlayer.seekToEnsurePlaying(it.toLong())
+                    }
                 },
                 onToggleMute = {
                     autoHideController++

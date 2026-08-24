@@ -334,6 +334,7 @@ fun aMediaViewerPageData(
     thumbnailSource = null,
     downloadedMedia = mutableStateOf(downloadedMedia),
     downloadProgress = MutableStateFlow(downloadProgress),
+    streamingVideo = mutableStateOf(null),
     pagerKey = 0L,
     validationState = validationState,
 )

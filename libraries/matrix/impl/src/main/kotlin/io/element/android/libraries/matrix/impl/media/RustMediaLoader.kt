@@ -16,12 +16,15 @@ import io.element.android.libraries.matrix.api.core.ProgressCallback
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaFile
 import io.element.android.libraries.matrix.api.media.MediaSource
+import io.element.android.libraries.matrix.api.media.StreamingMediaFile
 import io.element.android.libraries.matrix.impl.core.toProgressWatcher
 import io.element.android.libraries.matrix.impl.exception.mapClientException
 import kotlinx.coroutines.withContext
 import org.matrix.rustcomponents.sdk.Client
 import org.matrix.rustcomponents.sdk.use
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 import org.matrix.rustcomponents.sdk.MediaSource as RustMediaSource
 
 class RustMediaLoader(
@@ -60,6 +63,37 @@ class RustMediaLoader(
                 }
             }.mapFailure { it.mapClientException() }
         }
+
+    override suspend fun startStreamingMediaFile(
+        source: MediaSource,
+        mimeType: String?,
+        filename: String?,
+        progressCallback: ProgressCallback?,
+    ): Result<StreamingMediaFile> = withContext(mediaDispatcher) {
+        runCatchingExceptions {
+            val lock = ReentrantLock()
+            val result = AtomicReference<RustStreamingMediaFile>()
+            val callback = object : ProgressCallback {
+                override fun onProgress(current: Long, total: Long) {
+                    progressCallback?.onProgress(current, total)
+                    result.get()?.signalProgress()
+                }
+            }
+            source.toRustMediaSource().use { mediaSource ->
+                RustStreamingMediaFile(
+                    handle = innerClient.startMediaFileDownload(
+                        mediaSource = mediaSource,
+                        filename = filename,
+                        mimeType = mimeType.ensureDefaultSubtype(),
+                        useCache = true,
+                        tempDir = cacheDirectory.path,
+                        progressWatcher = callback.toProgressWatcher(),
+                    ),
+                    lock = lock,
+                ).also(result::set)
+            }
+        }
+    }
 
     override suspend fun downloadMediaFile(
         source: MediaSource,

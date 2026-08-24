@@ -152,6 +152,7 @@ fun MediaPlayerControllerView(
                             }
                         },
                     valueRange = 0f..state.durationInMillis.toFloat(),
+                    enabled = state.canSeek,
                     value = lastSelectedValue.takeIf { it >= 0 }
                         ?: state.seekingToMillis?.toFloat()
                         ?: state.progressInMillis.toFloat(),

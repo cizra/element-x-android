@@ -392,6 +392,7 @@ private fun MediaViewerPage(
     ) {
         val downloadedMedia by data.downloadedMedia
         val downloadProgress by data.downloadProgress.collectAsState()
+        val streamingVideo by data.streamingVideo
         val showProgress = rememberShowProgress(downloadedMedia)
         val mediaValidationState by data.validationState.collectMediaState(data.mediaSource.safeUrl)
         val thumbnailValidationState by data.validationState.collectMediaState(data.thumbnailSource?.safeUrl)
@@ -464,6 +465,7 @@ private fun MediaViewerPage(
                         bottomPaddingInPixels = bottomPaddingInPixels,
                         localMediaViewState = localMediaViewState,
                         localMedia = downloadedMedia.dataOrNull(),
+                        streamingVideo = streamingVideo,
                         mediaInfo = data.mediaInfo,
                         textFileViewer = textFileViewer,
                         onClick = {
